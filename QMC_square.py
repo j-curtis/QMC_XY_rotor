@@ -9,9 +9,6 @@ import time
 
 ### We will create a class to handle the simulations 
 class QMC:
-	BURN_MAX = 100000 ### We will not allow burn loop (which is a while loop) to take longer than this 
-	BURN_RUNNING_AVG = 30 ### We compute the mean energy to compare against using a running average of this many steps 
-
 	### Initialize method
 	def __init__(self,EJ,EC,T,L,M):
 		### this will initialize a class with the parameters for the model as well as simulation specs
@@ -46,8 +43,8 @@ class QMC:
 		self.Kt = 1./(self.EC * self.dt) ### The coupling between neighboring time slices
 
 
-		### we use a random initial angles configuration
-		self.thetas = self.rng.random(self.shape)*2.*np.pi
+		### we use an initial condition which is uniform
+		self.thetas = np.zeros(self.shape)
 
 	### This method will implement a single time-step of the Metropolis Hastings sampling for us
 	def MCStep(self,thetas):
@@ -87,6 +84,9 @@ class QMC:
 		### We use x ->  x'' = (1-p)*x + p*x' where p is 0,1 depending on whether we accept x' over x (p = 1 is accept x')
 		out = out + accepts * (new_thetas - out)
 
+		### We now mod back to 2pi 
+		out = np.mod(out,2.*np.pi)
+
 		return out 
 
 	### This method computes the average free energy density for a particular configuration
@@ -106,10 +106,27 @@ class QMC:
 
 		return energy_density
 
+	### This computes the vorticity distribution for a given set of angles 
+	def get_vorticitiy(self,thetas):
+		### This generates a list of nn indices to roll arrays by
+		### Note we index the rolls absolutely with respect to the origin of the first array
+		### We want A_v = [ sin(theta_{r+x} - theta_r) + sin(theta_{r+x+y} - theta_{r+x} ) + sin(theta_{r+y}-theta_{r+x+y}) + sin(theta_r - theta_{r+y}) ]/4 
+		nn_indices = [(1,0,0),(1,1,0),(0,1,0),(0,0,0)]
+
+		vorticity = np.zeros_like(thetas)
+		
+		for i in range(len(nn_indices)):
+			indx1 = nn_indices[i]
+			indx2 = nn_indices[i-1]
+			vorticity += np.sin( np.roll(thetas,indx1) - np.roll(thetas,indx2) )/4.
+
+		return vorticity
+
 	### This method computes the mean order parameter as < e^{itheta} > averaged over space and imaginary time
 	def get_OP(self,thetas):
 		return np.mean(np.exp(1.j*self.thetas))
 
+		
 	###########################
 	### MC SAMPLING METHODS ###
 	###########################
@@ -124,6 +141,7 @@ class QMC:
 
 		self.theta_samples = np.zeros((self.L,self.L,self.M,self.nsample))
 		self.energy_samples = np.zeros(self.nsample)
+		self.vort_samples = np.zeros((self.L,self.L,self.M,self.nsample))
 		self.OP_samples = np.zeros(self.nsample,dtype=complex)
 
 	### This method implements the burn loop using the single MCStep method for nburn iterations 
@@ -138,6 +156,7 @@ class QMC:
 			### Record the sample
 			self.theta_samples[...,counter] = self.thetas
 			self.energy_samples[counter] = self.get_energy_density(self.thetas)
+			self.vort_samples[...,counter] = self.get_vorticitiy(self.thetas)
 			self.OP_samples[counter] = self.get_OP(self.thetas)
 
 			### Now we run for a number of steps 
@@ -157,17 +176,17 @@ def main():
 	t0 = time.time()
 
 	EJ = 1.
-	EC = 0.1
-	T = 0.1
-	L = 20
-	M = 20
+	EC = 0.2
+	T = 3.
+	L = 6
+	M = 30
 
 	sim = QMC(EJ,EC,T,L,M)
 	print(sim.Kx,sim.Ky,sim.Kt)
 
-	nburn = 100000
-	nsample = 200
-	nstep = 200
+	nburn = 1000000000
+	nsample = 20
+	nstep = 1000
 
 	sim.set_sampling(nburn,nsample,nstep)
 
@@ -177,6 +196,13 @@ def main():
 	plt.plot(sim.energy_samples)
 	plt.show()
 	plt.plot(np.abs(sim.OP_samples))
+	plt.show()
+	plt.plot(sim.vort_samples[0,0,0,:])
+	plt.show()
+	plt.imshow(sim.theta_samples[:,:,0,0],origin='lower')
+	plt.show()
+	plt.imshow(np.mean(sim.vort_samples[:,:,0,:],axis=-1),origin='lower',cmap='coolwarm')
+	plt.colorbar()
 	plt.show()
 
 
