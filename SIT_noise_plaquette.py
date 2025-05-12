@@ -45,7 +45,7 @@ def eom_h(t,X,h):
 	return -1.j*h@X
 
 
-def Loschmidt_echo(tRs,lps,Ec,Ej):
+def Ramsey_echo(tRs,lps,Ec,Ej):
 	ntR = len(tRs)
 	nlp = len(lps)
 
@@ -63,6 +63,7 @@ def Loschmidt_echo(tRs,lps,Ec,Ej):
 
 	return echos
 
+### Double check this can be written as overlap of two Ramsey echos 
 def Hahn_echo(tHs,lps,Ec,Ej):
 	ntH = len(tHs)
 	nlp = len(lps)
@@ -75,12 +76,11 @@ def Hahn_echo(tHs,lps,Ec,Ej):
 		h1 = H(Ec,Ej,lps[i])
 		h2 = H(Ec,Ej,-lps[i])
 
-		psi_tpi = (intg.solve_ivp(eom_h,(tHs[0],tHs[-1]),psi_gs,args=(h1,),t_eval=tHs) ).y
+		psi_1 = (intg.solve_ivp(eom_h,(tHs[0],tHs[-1]),psi_gs,args=(h1,),t_eval=tHs) ).y
+		psi_2 = (intg.solve_ivp(eom_h,(tHs[0],tHs[-1]),psi_gs,args=(h2,),t_eval=tHs) ).y
 
 		for j in range(ntH):
-			psi_f = (intg.solve_ivp(eom_h,(tHs[0],tHs[j]),psi_tpi[:,j],args=(h2,),t_eval=tHs[:j]) ).y
-			
-			echos[i,j] = np.conjugate(psi_gs)@(psi_f[:,j])
+			echos[i,j] = np.conjugate(psi_2[:,j])@(psi_1[:,j])
 
 	return echos
 
@@ -91,21 +91,47 @@ def main():
 	Ec = 1.
 	Ej = 0.0
 
-	ntR = 300
-	nlp = 300
-	tRs = np.linspace(0.,20.,ntR)
+	ntR = 100
+	nlp = 100
+	tRs_short = np.linspace(0.,10.,ntR)
+	tRs_long = np.linspace(0.,20.,ntR)
+	tHs = np.linspace(0.,10.,ntR)
 	lps = np.linspace(0.,10.,nlp)
 
-	echos = Loschmidt_echo(tRs,lps,Ec,Ej)
+	Ramsey_echos_short = Ramsey_echo(tRs_short,lps,Ec,Ej)
+	Ramsey_echos_long = Ramsey_echo(tRs_long,lps,Ec,Ej)
+	Hahn_echos = Hahn_echo(tHs,lps,Ec,Ej)
 
 
+	nonGaussian_echos = np.zeros_like(Hahn_echos)
 
-	plt.imshow(np.real(echos),origin='lower',extent=[tRs[0],tRs[-1],lps[0],lps[-1]],cmap='coolwarm')
+	nonGaussian_echos = Hahn_echos*Ramsey_echos_long/(Ramsey_echos_short**4)
+
+
+	plt.imshow(np.real(Ramsey_echos_short),origin='lower',extent=[tRs_short[0],tRs_short[-1],lps[0],lps[-1]],cmap='coolwarm')
 	plt.xlabel(r'$\tau_R E_c$')
 	plt.ylabel(r'$\lambda_P/E_c$')
 	plt.colorbar()
 	plt.show()
 
+
+	plt.imshow(np.real(Ramsey_echos_long),origin='lower',extent=[tRs_long[0],tRs_long[-1],lps[0],lps[-1]],cmap='coolwarm')
+	plt.xlabel(r'$\tau_R E_c$')
+	plt.ylabel(r'$\lambda_P/E_c$')
+	plt.colorbar()
+	plt.show()
+
+	plt.imshow(np.real(Hahn_echos),origin='lower',extent=[tHs[0],tHs[-1],lps[0],lps[-1]],cmap='coolwarm')
+	plt.xlabel(r'$\tau_H E_c$')
+	plt.ylabel(r'$\lambda_P/E_c$')
+	plt.colorbar()
+	plt.show()
+
+	plt.imshow(np.real(np.log(nonGaussian_echos)),origin='lower',extent=[tHs[0],tHs[-1],lps[0],lps[-1]],cmap='coolwarm')
+	plt.xlabel(r'$\tau_{\rm NG} E_c$')
+	plt.ylabel(r'$\lambda_P/E_c$')
+	plt.colorbar()
+	plt.show()
 
 if __name__ == "__main__":
 	main()
