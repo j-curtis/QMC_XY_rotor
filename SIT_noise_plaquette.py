@@ -40,31 +40,64 @@ def find_GS(Ec,Ej):
 
 	return es[0],psis[0,:]
 
-def eom_f(t,X,h):
+### Evolution function under Hamiltonian h 
+def eom_h(t,X,h):
 	return -1.j*h@X
 
-def main():
-	Ec = 1.
-	Ej = 0.0
+
+def Loschmidt_echo(tRs,lps,Ec,Ej):
+	ntR = len(tRs)
+	nlp = len(lps)
 
 	e_gs, psi_gs = find_GS(Ec,Ej)
-
-
-
-	ntR = 300
-	nlp = 300
-	tRs = np.linspace(0.,20.,ntR)
-	lps = np.linspace(0.,10.,nlp)
 
 	echos = np.zeros((nlp,ntR),dtype=complex)
 
 	for i in range(nlp):
 		h = H(Ec,Ej,lps[i])
 
-		psi_t = (intg.solve_ivp(eom_f,(tRs[0],tRs[-1]),psi_gs,args=(h,),t_eval=tRs) ).y
+		psi_t = (intg.solve_ivp(eom_h,(tRs[0],tRs[-1]),psi_gs,args=(h,),t_eval=tRs) ).y
 
 		for j in range(ntR):
 			echos[i,j] = np.conjugate(psi_gs)@(psi_t[:,j])
+
+	return echos
+
+def Hahn_echo(tHs,lps,Ec,Ej):
+	ntH = len(tHs)
+	nlp = len(lps)
+
+	e_gs, psi_gs = find_GS(Ec,Ej)
+
+	echos = np.zeros((nlp,ntH),dtype=complex)
+
+	for i in range(nlp):
+		h1 = H(Ec,Ej,lps[i])
+		h2 = H(Ec,Ej,-lps[i])
+
+		psi_tpi = (intg.solve_ivp(eom_h,(tHs[0],tHs[-1]),psi_gs,args=(h1,),t_eval=tHs) ).y
+
+		for j in range(ntH):
+			psi_f = (intg.solve_ivp(eom_h,(tHs[0],tHs[j]),psi_tpi[:,j],args=(h2,),t_eval=tHs[:j]) ).y
+			
+			echos[i,j] = np.conjugate(psi_gs)@(psi_f[:,j])
+
+	return echos
+
+
+
+
+def main():
+	Ec = 1.
+	Ej = 0.0
+
+	ntR = 300
+	nlp = 300
+	tRs = np.linspace(0.,20.,ntR)
+	lps = np.linspace(0.,10.,nlp)
+
+	echos = Loschmidt_echo(tRs,lps,Ec,Ej)
+
 
 
 	plt.imshow(np.real(echos),origin='lower',extent=[tRs[0],tRs[-1],lps[0],lps[-1]],cmap='coolwarm')
