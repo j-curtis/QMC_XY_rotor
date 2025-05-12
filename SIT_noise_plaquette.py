@@ -91,12 +91,12 @@ def main():
 	Ec = 1.
 	Ej = 0.0
 
-	ntR = 100
-	nlp = 100
-	tRs_short = np.linspace(0.,10.,ntR)
-	tRs_long = np.linspace(0.,20.,ntR)
+	ntR = 500
+	nlp = 45
+	tRs_short = np.linspace(0.,25.,ntR)
+	tRs_long = np.linspace(0.,50.,ntR)
 	tHs = np.linspace(0.,10.,ntR)
-	lps = np.linspace(0.,10.,nlp)
+	lps = np.linspace(0.,1.,nlp)
 
 	Ramsey_echos_short = Ramsey_echo(tRs_short,lps,Ec,Ej)
 	Ramsey_echos_long = Ramsey_echo(tRs_long,lps,Ec,Ej)
@@ -105,7 +105,7 @@ def main():
 
 	nonGaussian_echos = np.zeros_like(Hahn_echos)
 
-	nonGaussian_echos = Hahn_echos*Ramsey_echos_long/(Ramsey_echos_short**4)
+	nonGaussian_echos = np.log(Hahn_echos) + np.log(Ramsey_echos_long) - 4.*np.log(Ramsey_echos_short)
 
 
 	plt.imshow(np.real(Ramsey_echos_short),origin='lower',extent=[tRs_short[0],tRs_short[-1],lps[0],lps[-1]],cmap='coolwarm')
@@ -127,7 +127,13 @@ def main():
 	plt.colorbar()
 	plt.show()
 
-	plt.imshow(np.real(np.log(nonGaussian_echos)),origin='lower',extent=[tHs[0],tHs[-1],lps[0],lps[-1]],cmap='coolwarm')
+	plt.imshow(np.real(nonGaussian_echos),origin='lower',extent=[tHs[0],tHs[-1],lps[0],lps[-1]],cmap='coolwarm')
+	plt.xlabel(r'$\tau_{\rm NG} E_c$')
+	plt.ylabel(r'$\lambda_P/E_c$')
+	plt.colorbar()
+	plt.show()
+
+	plt.imshow(np.imag(nonGaussian_echos),origin='lower',extent=[tHs[0],tHs[-1],lps[0],lps[-1]],cmap='coolwarm')
 	plt.xlabel(r'$\tau_{\rm NG} E_c$')
 	plt.ylabel(r'$\lambda_P/E_c$')
 	plt.colorbar()
