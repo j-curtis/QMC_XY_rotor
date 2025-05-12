@@ -63,7 +63,8 @@ def Ramsey_echo(tRs,lps,Ec,Ej):
 
 	return echos
 
-### Double check this can be written as overlap of two Ramsey echos 
+### Double check this can be written as overlap of two different Ramsey echos 
+### Seems like this is missing an extra period of evolution 
 def Hahn_echo(tHs,lps,Ec,Ej):
 	ntH = len(tHs)
 	nlp = len(lps)
