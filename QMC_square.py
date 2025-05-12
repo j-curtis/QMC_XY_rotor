@@ -25,11 +25,12 @@ class QMC:
 		self.EJ = EJ
 		self.EC = EC 
 		self.T = T 
-		self.L = L 
-		self.M = M 
+		### We round up lattice size to nearest even numbers 
+		self.L = L if L%2 ==0 else L+1  ### In order to implement the proper MCMC sampling we make sure the lattice is bipartite and even size so we can split evenlt
+		self.M = M if M%2 ==0 else M+1
 
 		### Now we produce the relevant array shape 
-		self.shape = (L,L,M)
+		self.shape = (self.L,self.L,self.M)
 
 		### And the relevant time-steps 
 		self.beta = 1./self.T
@@ -45,49 +46,56 @@ class QMC:
 
 		### we use an initial condition which is uniform
 		self.thetas = np.zeros(self.shape)
+		self.thetas = self.rng.random(size =self.shape)*2.*np.pi
 
 	### This method will implement a single time-step of the Metropolis Hastings sampling for us
+	### Modifies the thetas in place 
 	def MCStep(self,thetas):
-		
-		### thetas is passed theta configuration
-		### This will return a new generated theta config
-		### One time step will be one sweep through the lattice 
-		out = np.copy(thetas) 
+		### This implements one time step of the Metropolis update
 
-		### This generates a list of nn indices to roll arrays by
-		nn_indices = [(1,0,0),(-1,0,0),(0,1,0),(0,-1,0),(0,0,1),(0,0,-1) ]
-		### For each nearest neighbor this is the corresponding spin stiffness in that direction 
-		nn_Ks = [ self.Kx,self.Kx,self.Ky,self.Ky,self.Kt,self.Kt ]
+		### We implement by first breaking in to even and odd sublattices
+		### Each of these can be updated independently of the other 
+		### We index the sublattice by s = 0,1 for odd or even
+		for s in range(2):
+			### We compute the self-consistent fields for all sites 
+			### Being careful about roll
+			nn_indices = [(1,0,0),(-1,0,0),(0,1,0),(0,-1,0),(0,0,1),(0,0,-1) ]
+			nn_Ks = [ self.Kx,self.Kx,self.Ky,self.Ky,self.Kt,self.Kt ]
+			### For each nearest neighbor this is the corresponding spin stiffness in that direction 
 
-		delta_thetas_nn = [ thetas - np.roll(thetas,nn_index) for nn_index in nn_indices ] ### this gives a list of the differences in angles between nearest neighbor sites for each neighbor 
+			#self_consistent_field = sum([ nn_Ks[nn]*np.exp(-1.j*np.roll(thetas,nn_indices[nn])) for nn in range(len(nn_indices)) ])
+			self_consistent_field = sum([ nn_Ks[nn]*np.exp(-1.j*np.roll(thetas, shift=nn_indices[nn], axis=(0,1,2) ) ) for nn in range(len(nn_indices)) ]) 
 
-		new_thetas = self.rng.random(size=self.shape)*2.*np.pi
+			new_thetas = self.rng.random(self.shape)*2.*np.pi 
+			### These will be the proposal angles for both odd and even, we only need to update SCF after first sweep
+			delta_Es = -np.real( ( np.exp(1.j*new_thetas) - np.exp(1.j*thetas) )*self_consistent_field )
 
-		delta_thetas_nn_random = [ new_thetas - np.roll(thetas,nn_index) for nn_index in nn_indices ] ### Sample for the proposed updated thetas
+			### Now we form an array of accept probabilities
+			thresholds = np.exp(-delta_Es)
 
-		### This computes the change in energies for each site 
-		delta_Es = np.zeros_like(thetas)
+			### We generate an array of random floats in [0,1] to compare 
+			probs = self.rng.random(size=self.shape)
 
-		for nn in range(len(nn_indices)):
-			delta_Es += -nn_Ks[nn]*(np.cos(delta_thetas_nn_random[nn]) - np.cos(delta_thetas_nn[nn]) ) 
+			### This will be one if the entry for that site is accepted and 0 else
+			accepts = (probs < thresholds).astype(float)
 
-		### Now we form an array of accept probabilities
-		thresholds = np.exp(-delta_Es)
+			### We now elementwise replace the old angles with those that should be updated 
+			### We use x ->  x'' = (1-p)*x + p*x' where p is 0,1 depending on whether we accept x' over x (p = 1 is accept x')
+			### We mask only the even sublattice and update it 
+			### We generate an array mask 
+			### sublattice A is if x + y + t is even 
+			### This should generate array mask for sublattice A 
+			### This piece courtesy of chatGPT
+			x = np.arange(self.L)[:,None,None]
+			y = np.arange(self.L)[None,:,None]
+			t = np.arange(self.M)[None,None,:]
+			mask_SL_A = (x+y+t)%2 == 0 
 
-		### We generate an array of random floats in [0,1] to compare 
-		probs = self.rng.random(size=self.shape)
+			mask = mask_SL_A if s == 0 else ~mask_SL_A ### for sublattice B we flip the mask
+			thetas[mask] += accepts[mask] * (new_thetas[mask] - thetas[mask])	
 
-		### This will be one if the entry for that site is accepted and 0 else
-		accepts = (probs < thresholds).astype(float)
-
-		### We now elementwise replace the old angles with those that should be updated 
-		### We use x ->  x'' = (1-p)*x + p*x' where p is 0,1 depending on whether we accept x' over x (p = 1 is accept x')
-		out = out + accepts * (new_thetas - out)
-
-		### We now mod back to 2pi 
-		out = np.mod(out,2.*np.pi)
-
-		return out 
+		### Now we just bring back to the interval [0,2pi]
+		thetas = np.mod(thetas,2.*np.pi) 
 
 	### This method computes the average free energy density for a particular configuration
 	def get_energy_density(self,thetas):
@@ -96,7 +104,7 @@ class QMC:
 		### For each nearest neighbor this is the corresponding spin stiffness in that direction 
 		nn_Ks = [ self.Kx,self.Kx,self.Ky,self.Ky,self.Kt,self.Kt ]
 
-		delta_thetas_nn = [ thetas - np.roll(thetas,nn_index) for nn_index in nn_indices ] ### this gives a list of the differences in angles between nearest neighbor sites for each neighbor 
+		delta_thetas_nn = [ thetas - np.roll(thetas,nn_index,axis=(0,1,2)) for nn_index in nn_indices ] ### this gives a list of the differences in angles between nearest neighbor sites for each neighbor 
 		
 		### This computes the change in energies for each site 
 		energy_density = 0.
@@ -118,14 +126,13 @@ class QMC:
 		for i in range(len(nn_indices)):
 			indx1 = nn_indices[i]
 			indx2 = nn_indices[i-1]
-			vorticity += np.sin( np.roll(thetas,indx1) - np.roll(thetas,indx2) )/4.
+			vorticity += np.mod( np.roll(thetas,indx1,axis=(0,1,2)) - np.roll(thetas,indx2,axis=(0,1,2)) , 2.*np.pi)
 
 		return vorticity
 
 	### This method computes the mean order parameter as < e^{itheta} > averaged over space and imaginary time
 	def get_OP(self,thetas):
 		return np.mean(np.exp(1.j*self.thetas))
-
 		
 	###########################
 	### MC SAMPLING METHODS ###
@@ -147,7 +154,8 @@ class QMC:
 	### This method implements the burn loop using the single MCStep method for nburn iterations 
 	def burn(self):
 		for i in range(self.nburn):
-			self.thetas = self.MCStep(self.thetas)
+			self.MCStep(self.thetas)
+			#self.thetas = self.MCStep(self.thetas)
 
 	### We now generate samples and sample the free energy density 
 	def sample(self):
@@ -161,7 +169,8 @@ class QMC:
 
 			### Now we run for a number of steps 
 			for i in range(self.nstep):
-				self.thetas = self.MCStep(self.thetas)
+				#self.thetas = self.MCStep(self.thetas)
+				self.MCStep(self.thetas)
 
 			### Update the counter 
 			counter += 1
@@ -176,32 +185,40 @@ def main():
 	t0 = time.time()
 
 	EJ = 1.
-	EC = 0.2
-	T = 3.
-	L = 6
-	M = 30
+	EC = 0.05
+	nTs = 10
+	Ts = np.linspace(0.05,2.5,nTs)
+	L = 14
+	M = 10
 
-	sim = QMC(EJ,EC,T,L,M)
-	print(sim.Kx,sim.Ky,sim.Kt)
+	nburn = 10000
+	nsample = 50
+	nstep = 10
 
-	nburn = 1000000000
-	nsample = 20
-	nstep = 1000
+	energies = np.zeros(nTs)
+	OPs = np.zeros(nTs)
 
-	sim.set_sampling(nburn,nsample,nstep)
+	for i in range(nTs):
+		sim = QMC(EJ,EC,Ts[i],L,M)
+		sim.set_sampling(nburn,nsample,nstep)
 
-	sim.burn()
-	sim.sample()
+		sim.burn()
+		sim.sample()
+
+		energies[i] = np.mean(sim.energy_samples)
+		OPs[i] =  np.mean(np.abs(sim.OP_samples) )
+
+	plt.plot(Ts,energies)
+	plt.show()
+	plt.plot(Ts,OPs)
+	plt.show()
+	quit()
 
 	plt.plot(sim.energy_samples)
 	plt.show()
 	plt.plot(np.abs(sim.OP_samples))
 	plt.show()
-	plt.plot(sim.vort_samples[0,0,0,:])
-	plt.show()
-	plt.imshow(sim.theta_samples[:,:,0,0],origin='lower')
-	plt.show()
-	plt.imshow(np.mean(sim.vort_samples[:,:,0,:],axis=-1),origin='lower',cmap='coolwarm')
+	plt.imshow(sim.vort_samples[:,:,0,-1])
 	plt.colorbar()
 	plt.show()
 
