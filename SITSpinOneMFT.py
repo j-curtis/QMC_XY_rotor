@@ -29,14 +29,16 @@ def initialize_Mott(Lx,Ly):
     
     return wf 
 
+
 ### This initializes a wavefunction on Lx x Ly grid in the superfluid state with a chosen phase 
 def initialize_SF(Lx,Ly,phase):
     wf = np.zeros((3,Lx,Ly),dtype=complex) ### 3 components for each site, LxL sites
     
-    wf[:,...] = [ np.exp(1.j*phase), np.sqrt(2.), np.exp(-1.j*phase) ]
+    wf[0,...] = 0.5*np.exp(1.j*phase)
+    wf[1,...] = 0.5*np.sqrt(2.)
+    wf[2,...] = 0.5*np.exp(-1.j*phase)
     
-    return wf 
-
+    return wf
 
 ### This takes the wavefunction overlap and returns it resolved in space
 def overlap(w1,w2):
@@ -63,6 +65,7 @@ def charge_squared(wf):
     out = np.real( np.sum( np.conjugate(wf) * np.tensordot(spin_one_matrices[3]@spin_one_matrices[3], wf,axes=(1,0)),axis=0) )/norm
     
     return out  
+
 
 
 
