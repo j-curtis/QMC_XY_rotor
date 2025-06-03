@@ -3,9 +3,10 @@
 ### 05/26/25
 
 import numpy as np
-import scipy as scp
+
 from scipy import integrate as intg
-from scipy import signal 
+from scipy import optimize as opt
+
 import time
 from matplotlib import pyplot as plt
 from matplotlib import cm
@@ -45,6 +46,11 @@ def overlap(w1,w2):
     return np.sum( np.conjugate(w1)*w2,axis=0)
 
 
+
+###################################
+####### Compute observables #######
+###################################
+
 ### This evaluates the magnetization <S> on each site 
 ### Returns a tensor <S>[c,x,y] with c = 0,1,2,3 the component 
 def magnetization(wf):
@@ -62,27 +68,62 @@ def magnetization(wf):
 ### Returns a tensor <S>[c,x,y] with c = 0,1,2,3 the component 
 def charge_squared(wf):
     norm = np.real(overlap(wf,wf))
-    out = np.real( np.sum( np.conjugate(wf) * np.tensordot(spin_one_matrices[3]@spin_one_matrices[3], wf,axes=(1,0)),axis=0) )/norm
+    out = np.real( np.sum( np.conjugate(wf) * np.tensordot( (spin_one_matrices[3])@(spin_one_matrices[3]), wf,axes=(1,0)),axis=0) )/norm
     
     return out  
-
-
 
 
 ### Evaluates the total energy of an ansatz wavefunction for given Ec and Ej parameters 
 ### These may be arrays 
 def energy(wf,Ec,Ej):
-    charging_energy = Ec*np.sum( charge_squared(wf) )
+    charging_energy = np.sum( Ec*charge_squared(wf) )
     
     m = magnetization(wf)
-    Josephson_energy = -Ej*sum([ sum([ np.sum( m[i,...]*np.roll(m[i,...],shift=s,axis=[0,1]) ) for i in [1,2] ]) for s in [ [1,0],[0,1] ] ])
+    Josephson_energy = -0.5*Ej*sum([ sum([ np.sum( m[i,...]*np.roll(m[i,...],shift=s,axis=[0,1]) ) for i in [1,2] ]) for s in [ [1,0],[0,1] ] ])
     
-    return charging_energy + Josephson_energy
+    return np.real( charging_energy + Josephson_energy )
+
+### Evalutes the mean superfluid density 
+def SF_OP(wf):
+	m = magnetization(wf) ### this is the magnetization at each point in space 
+
+	op = np.mean( m[1,...] + 1.j*m[2,...])
+
+	return op
 
 
+####################################
+####### Finding ground state #######
+####################################
+
+### Basin hopping to find the ground state
+### Optional to pass initial guess, which is useful for annealing
+def find_GS(Lx,Ly,Ec,Ej,wf0=None):
+    ### We define a function which computes the energy given a flattened wavefunction
+
+    ### This takes a flattened wavefunction and computes the energy of this state by unflattening and evaluating energy 
+    def e_func(wf_flat):
+    	### First flatten the wavefunction 
+    	wf = wf_flat.reshape((3,Lx,Ly))
+
+    	e = energy(wf,Ec,Ej)
+
+    	return e 
+
+    if (wf0 == None).any():
+    	wf0 = initialize_Mott(Lx,Ly)
+    wf0 = wf0.flatten()
+
+    res = opt.basinhopping(e_func,wf0)
+
+    wf = res.x.reshape((3,Lx,Ly))
+
+    return wf, res.fun
 
 
-
+##############################
+####### Time evolution #######
+##############################
 
 
 
