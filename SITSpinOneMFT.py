@@ -125,7 +125,33 @@ def find_GS(Lx,Ly,Ec,Ej,wf0=None):
 ####### Time evolution #######
 ##############################
 
+### This is the equation of motion function 
+### Accepts the flattened wavefunction as an argument
+def eom(t,X,Lx,Ly,Ec,Ej):
+    ### First we unflatten X 
+    wf = X.reshape((3,Lx,Ly))
+    
+    ### We now compute the equation of motion
+    ### First term is the local charging energy
+    ### This is -i Ec[x,y] Sz^2 psi[x,y]
+    
+    charging_eom = -1.j*np.tensordot( (spin_one_matrices[3])@(spin_one_matrices[3]), wf,axes=(1,0))*Ec
+    
+    dXdt = charging_eom.flatten()
 
+    ### Now we have the Josephson contributions
+    ### These are obtained as S.MF
+    ### Where MF = -0.5*Ej *( m[x+1,y] + m[x-1,y]+m[x,y+1]+m[x,y-1]) 
+
+    m = magnetization(wf)
+
+    curie_weiss = -0.5*Ej*( np.roll(m,shift=[0,1,0],axis=[0,1,2]) + np.roll(m,shift=[0,-1,0],axis=[0,1,2])+np.roll(m,shift=[0,0,1],axis=[0,1,2]) + np.roll(m,shift=[0,0,-1],axis=[0,1,2]))
+    
+    josephson_eom = -1.j*( np.tensordot(spin_one_matrices[1],wf,axes=[1,0]) * curie_weiss[1,...] + np.tensordot(spin_one_matrices[2] , wf,axes=[1,0])*curie_weiss[2,...] )
+
+    dXdt += josephson_eom.flatten()
+                 
+    return dXdt 
 
 
 
