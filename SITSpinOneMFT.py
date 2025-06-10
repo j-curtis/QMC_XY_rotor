@@ -30,7 +30,6 @@ def initialize_Mott(Lx,Ly):
     
     return wf 
 
-
 ### This initializes a wavefunction on Lx x Ly grid in the superfluid state with a chosen phase 
 def initialize_SF(Lx,Ly,phase):
     wf = np.zeros((3,Lx,Ly),dtype=complex) ### 3 components for each site, LxL sites
@@ -41,47 +40,43 @@ def initialize_SF(Lx,Ly,phase):
     
     return wf
 
+###################################
+####### Compute observables #######
+###################################
 ### This takes the wavefunction overlap and returns it resolved in space
 def overlap(w1,w2):
     return np.sum( np.conjugate(w1)*w2,axis=0)
 
-
-
-###################################
-####### Compute observables #######
-###################################
-
 ### This evaluates the magnetization <S> on each site 
 ### Returns a tensor <S>[c,x,y] with c = 0,1,2,3 the component 
 def magnetization(wf):
-    Lx,Ly = wf.shape[-2:]
-    out = np.zeros((4,Lx,Ly))
+    out = np.zeros((4,*wf.shape[1:]))
     
     norm = np.real(overlap(wf,wf))
     
     for i in range(4):
-        out[i,...] = np.real( np.sum( np.conjugate(wf) * np.tensordot(spin_one_matrices[i],wf,axes=(1,0)),axis=0) )/norm
+        out[i,...] = np.real( np.sum( np.conjugate(wf) * np.tensordot(spin_one_matrices[i],wf,axes=(1,0)), axis=0) )/norm
     
     return out
 
 ### This evaluates the magnetization <S> on each site 
 ### Returns a tensor <S>[c,x,y] with c = 0,1,2,3 the component 
 def charge_squared(wf):
-    norm = np.real(overlap(wf,wf))
-    out = np.real( np.sum( np.conjugate(wf) * np.tensordot( (spin_one_matrices[3])@(spin_one_matrices[3]), wf,axes=(1,0)),axis=0) )/norm
+    norm = overlap(wf,wf)
+    out = np.real( np.sum( np.conjugate(wf) * np.tensordot( (spin_one_matrices[3])@(spin_one_matrices[3]), wf,axes=(1,0)),axis=0)/norm)
     
     return out  
-
 
 ### Evaluates the total energy of an ansatz wavefunction for given Ec and Ej parameters 
 ### These may be arrays 
 def energy(wf,Ec,Ej):
-    charging_energy = np.sum( Ec*charge_squared(wf) )
-    
-    m = magnetization(wf)
-    Josephson_energy = -0.5*Ej*sum([ sum([ np.sum( m[i,...]*np.roll(m[i,...],shift=s,axis=[0,1]) ) for i in [1,2] ]) for s in [ [1,0],[0,1] ] ])
-    
-    return np.real( charging_energy + Josephson_energy )
+	charging_energy = np.sum( Ec*charge_squared(wf) )
+	m = magnetization(wf)
+	Josephson_energy = -0.5*Ej*sum([ 
+		np.sum( m[1,...]*np.roll(m[1,...], shift=s, axis=[0,1] ) ) + np.sum( m[2,...]*np.roll(m[2,...], shift=s, axis=[0,1] ) )
+		for s in [ [0,1], [1,0] ] ])
+
+	return np.real( charging_energy + Josephson_energy )
 
 ### Evalutes the mean superfluid density 
 def SF_OP(wf):
@@ -90,7 +85,6 @@ def SF_OP(wf):
 	op = np.mean( m[1,...] + 1.j*m[2,...])
 
 	return op
-
 
 ####################################
 ####### Finding ground state #######
@@ -103,15 +97,16 @@ def find_GS(Lx,Ly,Ec,Ej,wf0=None):
 
     ### This takes a flattened wavefunction and computes the energy of this state by unflattening and evaluating energy 
     def e_func(wf_flat):
-    	### First flatten the wavefunction 
+    	### First flatten the wavefunction
     	wf = wf_flat.reshape((3,Lx,Ly))
 
     	e = energy(wf,Ec,Ej)
 
     	return e 
 
-    if (wf0 == None).any():
+    if wf0 is None:
     	wf0 = initialize_Mott(Lx,Ly)
+
     wf0 = wf0.flatten()
 
     res = opt.basinhopping(e_func,wf0)
@@ -141,7 +136,7 @@ def eom(t,X,Lx,Ly,Ec,Ej):
 
     ### Now we have the Josephson contributions
     ### These are obtained as S.MF
-    ### Where MF = -0.5*Ej *( m[x+1,y] + m[x-1,y]+m[x,y+1]+m[x,y-1]) 
+    ### Where MF = -0.5*Ej*( m[x+1,y] + m[x-1,y]+m[x,y+1]+m[x,y-1]) 
 
     m = magnetization(wf)
 
@@ -154,6 +149,21 @@ def eom(t,X,Lx,Ly,Ec,Ej):
     return dXdt 
 
 
+
+def solve_eom_from_GS(Lx,Ly,Ec,Ej,times):
+	### First we find the ground state 
+	wf0,e = find_GS(Lx,Ly,Ec,Ej)
+
+	X0 = wf0.flatten()
+
+	### Now we solve dynamics starting from this, and hopefully find no dynamics in absence of external perturbation
+	sol = intg.solve_ivp(eom,(times[0],times[-1]),X0,t_eval=times,args=(Lx,Ly,Ec,Ej),max_step=0.01)
+
+	### Now we reshape the output 
+	wf_vs_t = sol.y.reshape((3,Lx,Ly,len(sol.t)))
+
+	### Return wf and times 
+	return wf_vs_t
 
 
 
