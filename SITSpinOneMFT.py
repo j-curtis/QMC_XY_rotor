@@ -17,6 +17,11 @@ rng = np.random.default_rng()
 spin_one_matrices = [ np.array([[1.,0.,0.],[0.,1.,0.],[0.,0.,1.]],dtype=complex), 1./np.sqrt(2.)*np.array([[0.,1.,0.],[1.,0.,1.],[0.,1.,0.]],dtype=complex),1./np.sqrt(2.)*np.array([[0.,-1.j,0.],[1.j,0.,-1.j],[0.,1.j,0.]],dtype=complex),np.array([[1.,0.,0.],[0.,0.,0.],[0.,0.,-1.]],dtype=complex) ]
 
 
+###########################################
+####### Useful mathematical methods #######
+###########################################
+
+
 ##########################################
 ####### Wavefunction initilizaiton #######
 ##########################################
@@ -116,9 +121,9 @@ def find_GS(Lx,Ly,Ec,Ej,wf0=None):
     return wf, res.fun
 
 
-##############################
-####### Time evolution #######
-##############################
+#################################
+####### GS Time evolution #######
+#################################
 
 ### This is the equation of motion function 
 ### Accepts the flattened wavefunction as an argument
@@ -148,8 +153,6 @@ def eom(t,X,Lx,Ly,Ec,Ej):
                  
     return dXdt 
 
-
-
 def solve_eom_from_GS(Lx,Ly,Ec,Ej,times):
 	### First we find the ground state 
 	wf0,e = find_GS(Lx,Ly,Ec,Ej)
@@ -164,6 +167,122 @@ def solve_eom_from_GS(Lx,Ly,Ec,Ej,times):
 
 	### Return wf and times 
 	return wf_vs_t
+
+#####################################
+####### Quench time evolution #######
+#####################################
+
+### This is the equation of motion function in presence of a quench of local vorticity field on plaquette (00) 
+### Accepts the flattened wavefunction as an argument
+def eom_quench(t,X,Lx,Ly,Ec,Ej,quench_function):
+    ### First we unflatten X 
+    wf = X.reshape((3,Lx,Ly))
+    
+    ### We now compute the equation of motion
+    ### First term is the local charging energy
+    ### This is -i Ec[x,y] Sz^2 psi[x,y]
+    
+    charging_eom = -1.j*np.tensordot( (spin_one_matrices[3])@(spin_one_matrices[3]), wf,axes=(1,0))*Ec
+    
+    dXdt = charging_eom.flatten()
+
+    ### Now we have the Josephson contributions
+    ### These are obtained as S.MF
+    ### Where MF = -0.5*Ej*( m[x+1,y] + m[x-1,y]+m[x,y+1]+m[x,y-1]) 
+
+    m = magnetization(wf)
+
+    curie_weiss = -0.5*Ej*( np.roll(m,shift=[0,1,0],axis=[0,1,2]) + np.roll(m,shift=[0,-1,0],axis=[0,1,2])+np.roll(m,shift=[0,0,1],axis=[0,1,2]) + np.roll(m,shift=[0,0,-1],axis=[0,1,2]))
+    
+    josephson_eom = -1.j*( np.tensordot(spin_one_matrices[1],wf,axes=[1,0]) * curie_weiss[1,...] + np.tensordot(spin_one_matrices[2] , wf,axes=[1,0])*curie_weiss[2,...] )
+
+    ### Now we incorporate the quench
+    ### This couples in the following way
+    ### Depending on the quench function we apply a hopping phase to the plaquette (0,0) -> (1,0) -> (1,1) -> (0,1)
+    sites = [ np.array([0,0]), np.array([1,0]) , np.array([1,1]), np.array([0,1]) ] ### Sites in the plaquette we traverse in a loop
+
+    ### The quench function controls the flux inserted, and the Hamiltonian coefficient remains EJ
+    ### So the josephson terms for the sites on the plaquette will be zeroed out and re-made specifically to incorporate the flux inserted 
+
+    vorticity_eom = np.zeros_like(josephson_eom)
+
+    for i in range(len(sites)):
+        r = sites[i]
+        x = r[0]
+        y = r[1]
+        fwd = sites[(i+1)%len(sites)] ### The forward neighbor on the loop
+        bwd = sites[i-1] ### The previous neighbor on the loop
+
+        ### These should be the other two neighbors of the site on the plaquette
+        ### We reflect the neighbor which is in the plaquette through the site r which then should lie out of the plaquette 
+        out_1 = (2*r - fwd)%np.array([Lx,Ly])
+        out_2 = (2*r - bwd)%np.array([Lx,Ly])
+
+        ### We generate the correct Curie Weiss field including the flux inserted 
+        flux_phase = np.exp(1.j*quench_function(t)) ### This describes the size and time-dependence of the flux inserted as a function of time 
+        complex_curie_weiss = -0.5*Ej*flux_phase*(m[1,fwd[0],fwd[1]]+1.j*m[2,fwd[0],fwd[1]]) 
+        complex_curie_weiss += -0.5*Ej*np.conjugate(flux_phase)*(m[1,bwd[0],bwd[1]]+1.j*m[2,bwd[0],bwd[1]]) 
+        complex_curie_weiss += -0.5*Ej*(m[1,out_1[0],out_1[1]] + 1.j*m[2,out_1[0],out_1[1]]) 
+        complex_curie_weiss += -0.5*Ej*(m[1,out_2[0],out_2[1]] + 1.j*m[2,out_2[0],out_2[1]]) 
+
+        ### Now we form this in to the appropriate matrix 
+        eom_matrix = np.real(complex_curie_weiss)*spin_one_matrices[1] + np.imag(complex_curie_weiss)*spin_one_matrices[2]
+
+        vorticity_eom[:,x,y] += -1j*np.tensordot(eom_matrix, wf[:,x,y],axes=[1,0])
+        josephson_eom[:,x,y] *= 0.
+
+    ### We now add the correct eom contributions, which are only nonzero on the plaquette sits, to the josephson terms which are zeroed on the plaquette sites but otherwise correct
+    josephson_eom += vorticity_eom
+
+    dXdt += josephson_eom.flatten()
+
+    return dXdt 
+
+### This implements a simple Ramsey type flux quench which turns on to value flux at time tR  
+def ramsey_flux_quench(t,flux,tR):
+    if t >tR:
+        return flux
+
+    else:
+        return 0.
+
+### This computes the wavefunction starting from the ground state and then in response to a quench of the local vorticity
+def solve_eom_quench(Lx,Ly,Ec,Ej,times,quench_function):
+    ### First we find the ground state 
+    wf0,e = find_GS(Lx,Ly,Ec,Ej)
+
+    X0 = wf0.flatten()
+
+    ### Now we solve dynamics starting from this, and hopefully find no dynamics in absence of external perturbation
+    sol = intg.solve_ivp(eom_quench,(times[0],times[-1]),X0,t_eval=times,args=(Lx,Ly,Ec,Ej,quench_function),max_step=0.01)
+
+    ### Now we reshape the output 
+    wf_vs_t = sol.y.reshape((3,Lx,Ly,len(sol.t)))
+
+    ### Return wf and times 
+    return wf_vs_t
+
+
+
+####################
+####### Main #######
+####################
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
