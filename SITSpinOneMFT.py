@@ -16,12 +16,6 @@ rng = np.random.default_rng()
 
 spin_one_matrices = [ np.array([[1.,0.,0.],[0.,1.,0.],[0.,0.,1.]],dtype=complex), 1./np.sqrt(2.)*np.array([[0.,1.,0.],[1.,0.,1.],[0.,1.,0.]],dtype=complex),1./np.sqrt(2.)*np.array([[0.,-1.j,0.],[1.j,0.,-1.j],[0.,1.j,0.]],dtype=complex),np.array([[1.,0.,0.],[0.,0.,0.],[0.,0.,-1.]],dtype=complex) ]
 
-
-###########################################
-####### Useful mathematical methods #######
-###########################################
-
-
 ##########################################
 ####### Wavefunction initilizaiton #######
 ##########################################
@@ -132,6 +126,46 @@ def find_GS(Lx,Ly,Ec,Ej,wf0=None):
 	wf = wf/np.sqrt(np.real(renorm))
 
 	return wf, res.fun
+
+### This method starts from superfluid state and turns on the charge to anneal to the final state 
+def find_GS_anneal_Ec(Lx,Ly,Ec,Ej):
+	### We define a function which computes the energy given a flattened wavefunction
+
+
+	### First we come up with an annealing schedule 
+	neps = 25
+	epsilons = np.linspace(0.,1.,neps)
+
+	wf0 = initialize_SF(Lx,Ly,0.)
+	wf0 = wf0.flatten()
+
+	for i in range(neps):
+		Ec_eps = epsilons[i]*Ec
+
+
+		### This takes a flattened wavefunction and computes the energy of this state by unflattening and evaluating energy 
+		def e_func(wf_flat):
+			### First flatten the wavefunction
+			wf = wf_flat.reshape((3,Lx,Ly))
+
+			e = energy(wf,Ec_eps,Ej)
+
+			return e 
+
+
+		res = opt.basinhopping(e_func,wf0)
+
+		wf0 = res.x
+		renorm = overlap(wf0,wf0)
+		wf0 = wf0/np.sqrt(np.real(renorm))
+
+
+	wf = wf0
+	renorm = overlap(wf,wf)
+
+	wf = wf/np.sqrt(np.real(renorm))
+
+	return wf
 
 
 #################################
