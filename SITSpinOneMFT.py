@@ -202,7 +202,6 @@ def eom(t,X,Lx,Ly,Ec,Ej):
 
 def solve_eom_from_GS(Lx,Ly,Ec,Ej,times):
 	### First we find the ground state 
-	if 
 	wf0,e = find_GS(Lx,Ly,Ec,Ej)
 
 	X0 = wf0.flatten()
