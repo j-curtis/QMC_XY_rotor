@@ -25,8 +25,10 @@ class QMC:
 		self.EJ = EJ
 		self.EC = EC 
 		self.T = T 
+
 		### We round up lattice size to nearest even numbers 
-		self.L = L if L%2 ==0 else L+1  ### In order to implement the proper MCMC sampling we make sure the lattice is bipartite and even size so we can split evenlt
+		### In order to implement the proper MCMC sampling we make sure the lattice is bipartite and even size so we can split evenly
+		self.L = L if L%2 ==0 else L+1  
 		self.M = M if M%2 ==0 else M+1
 
 		### Now we produce the relevant array shape 
@@ -48,9 +50,24 @@ class QMC:
 		self.thetas = np.zeros(self.shape)
 		self.thetas = self.rng.random(size =self.shape)*2.*np.pi
 
-	### This method will implement a single time-step of the Metropolis Hastings sampling for us
-	### Modifies the thetas in place 
+
+	### Modifies the thetas in place one site at a time
+	### Works by randomly selecting a site and performign a metropolis-hastings update
 	def MCStep(self,thetas):
+
+		### First we randomly propose a site 
+		x = self.rng.randint(0,self.L)
+		y = self.rng.randint(0,self.L)
+		t = self.rng.randint(0,self.M)
+
+		### Now we compute the self-consistent field 
+		
+
+
+
+	### POSSIBLY DEFECTIVE
+	### Modifies the thetas in place 
+	def MCStep_old(self,thetas):
 		### This implements one time step of the Metropolis update
 
 		### We implement by first breaking in to even and odd sublattices
@@ -94,8 +111,10 @@ class QMC:
 			mask = mask_SL_A if s == 0 else ~mask_SL_A ### for sublattice B we flip the mask
 			thetas[mask] += accepts[mask] * (new_thetas[mask] - thetas[mask])	
 
-		### Now we just bring back to the interval [0,2pi]
-		thetas = np.mod(thetas,2.*np.pi) 
+
+	##########################
+	### SAMPLE OBSERVABLES ###
+	##########################
 
 	### This method computes the average free energy density for a particular configuration
 	def get_energy_density(self,thetas):
@@ -119,7 +138,7 @@ class QMC:
 		### This generates a list of nn indices to roll arrays by
 		### Note we index the rolls absolutely with respect to the origin of the first array
 		### We want A_v = [ sin(theta_{r+x} - theta_r) + sin(theta_{r+x+y} - theta_{r+x} ) + sin(theta_{r+y}-theta_{r+x+y}) + sin(theta_r - theta_{r+y}) ]/4 
-		nn_indices = [(1,0,0),(1,1,0),(0,1,0),(0,0,0)]
+		nn_indices = [(-1,0,0),(-1,1,0),(0,-1,0),(0,0,0)]
 
 		vorticity = np.zeros_like(thetas)
 		
@@ -185,10 +204,10 @@ def main():
 	t0 = time.time()
 
 	EJ = 1.
-	EC = 0.05
+	EC = 0.1
 	nTs = 10
 	Ts = np.linspace(0.05,2.5,nTs)
-	L = 14
+	L = 10
 	M = 10
 
 	nburn = 10000
