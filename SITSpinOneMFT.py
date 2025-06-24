@@ -14,15 +14,56 @@ from matplotlib import colors as mclr
 
 rng = np.random.default_rng()
 
-spin_one_matrices = [ np.array([[1.,0.,0.],[0.,1.,0.],[0.,0.,1.]],dtype=complex), 1./np.sqrt(2.)*np.array([[0.,1.,0.],[1.,0.,1.],[0.,1.,0.]],dtype=complex),1./np.sqrt(2.)*np.array([[0.,-1.j,0.],[1.j,0.,-1.j],[0.,1.j,0.]],dtype=complex),np.array([[1.,0.,0.],[0.,0.,0.],[0.,0.,-1.]],dtype=complex) ]
-
-
+### This class will realize an instance of the XY model mean-field dynamics
 class xymodel:
+	spin_one_matrices = [ np.array([[1.,0.,0.],[0.,1.,0.],[0.,0.,1.]],dtype=complex), 1./np.sqrt(2.)*np.array([[0.,1.,0.],[1.,0.,1.],[0.,1.,0.]],dtype=complex),1./np.sqrt(2.)*np.array([[0.,-1.j,0.],[1.j,0.,-1.j],[0.,1.j,0.]],dtype=complex),np.array([[1.,0.,0.],[0.,0.,0.],[0.,0.,-1.]],dtype=complex) ]
+
+	### Class methods
+
 	### This method will accept a system size and range of Ec values and generate a random array for purposes of initializing 
 	@classmethod
 	def generate_Ec_disorder(cls,Lx,Ly,Ecmin,Ecmax):
 		return rng.uniform(low=Ecmin,high=Ecmax,size=(Lx,Ly))
 
+	### This method takes the overlap of two wavefunctions 
+	### Should have shape of wf = [3,...] where the first dimension is the local Hilbert space index 
+	### returns < wf1 | wf2 > 
+	@classmethod
+	def overlap(cls,wf1,wf2):
+		return np.sum( np.conjugate(wf1)*wf2,axis=0)
+	
+	### This takes the full wavefunction fidelity which is a product over all site sof the overlap
+	@classmethod
+	def fidelity(cls,wf1,wf2):
+		return np.prod( np.sum( np.conjugate(wf1)*wf2,axis=0),axis=(0,1) ) 
+
+	### This evaluates the magnetization <S> on each site 
+	### Returns a tensor <S>[c,x,y] with c = 0,1,2,3 the component 
+	@classmethod
+	def magnetization(cls,wf):
+		out = np.zeros((4,*wf.shape[1:]))
+
+		norm = np.real(cls.overlap(wf,wf))
+
+		### We make sure the wavefunction is normalized 
+		wf = wf/np.sqrt(norm)
+
+		for i in range(4):
+			out[i,...] = np.real( np.sum( np.conjugate(wf) * np.tensordot(cls.spin_one_matrices[i],wf,axes=(1,0)), axis=0) )/norm
+
+		return out
+
+	### This evaluates the charge fluctuations <Sz^2> on each site 
+	@classmethod
+	def charge_squared(cls,wf):
+		norm = cls.overlap(wf,wf)
+		### We make sure the wavefunction is normalized 
+		wf = wf/np.sqrt(norm)
+		out = np.real( np.sum( np.conjugate(wf) * np.tensordot( (cls.spin_one_matrices[3])@(cls.spin_one_matrices[3]), wf,axes=(1,0)),axis=0)/norm)
+
+		return out  
+
+	### Constructor
 	def __init__(self,Lx,Ly,Ej,Ec):
 		"""Constructor for instance of an xy model with given size and parameters"""
 		### We allow for Ec to be an Lx x Ly array of onsite values to include disorder possibility
@@ -58,44 +99,6 @@ class xymodel:
 
 		return wf
 
-	### This method takes the overlap of two wavefunctions 
-	### Should have shape of wf = [3,...] where the first dimension is the local Hilbert space index 
-	### returns < wf1 | wf2 > 
-	@classmethod
-	def overlap(cls,wf1,wf2):
-		return np.sum( np.conjugate(wf1)*wf2,axis=0)
-	
-	### This takes the full wavefunction fidelity which is a product over all site sof the overlap
-	@classmethod
-	def fidelity(cls,wf1,wf2):
-		return np.prod( np.sum( np.conjugate(wf1)*wf2,axis=0),axis=(0,1) ) 
-
-	### This evaluates the magnetization <S> on each site 
-	### Returns a tensor <S>[c,x,y] with c = 0,1,2,3 the component 
-	@classmethod
-	def magnetization(cls,wf):
-		out = np.zeros((4,*wf.shape[1:]))
-
-		norm = np.real(cls.overlap(wf,wf))
-
-		### We make sure the wavefunction is normalized 
-		wf = wf/np.sqrt(norm)
-
-		for i in range(4):
-			out[i,...] = np.real( np.sum( np.conjugate(wf) * np.tensordot(spin_one_matrices[i],wf,axes=(1,0)), axis=0) )/norm
-
-		return out
-
-	### This evaluates the charge fluctuations <Sz^2> on each site 
-	@classmethod
-	def charge_squared(cls,wf):
-		norm = cls.overlap(wf,wf)
-		### We make sure the wavefunction is normalized 
-		wf = wf/np.sqrt(norm)
-		out = np.real( np.sum( np.conjugate(wf) * np.tensordot( (spin_one_matrices[3])@(spin_one_matrices[3]), wf,axes=(1,0)),axis=0)/norm)
-
-		return out  
-
 	### Evaluates the total energy of an ansatz wavefunction 
 	def energy(self,wf):
 
@@ -103,7 +106,7 @@ class xymodel:
 		norm = self.overlap(wf,wf)
 		wf = wf/np.sqrt(np.real(norm))
 
-		charging_energy = np.sum( self.Ec*charge_squared(wf) )
+		charging_energy = np.sum( self.Ec*self.charge_squared(wf) )
 		m = self.magnetization(wf)
 		Josephson_energy = -0.5*self.Ej*sum([ 
 			np.sum( m[1,...]*np.roll(m[1,...], shift=s, axis=[0,1] ) ) + np.sum( m[2,...]*np.roll(m[2,...], shift=s, axis=[0,1] ) )
@@ -157,7 +160,7 @@ class xymodel:
 		### First term is the local charging energy
 		### This is -i Ec[x,y] Sz^2 psi[x,y]
 
-		charging_eom = -1.j*np.tensordot( (spin_one_matrices[3])@(spin_one_matrices[3]), wf,axes=(1,0))*self.Ec
+		charging_eom = -1.j*np.tensordot( (self.spin_one_matrices[3])@(self.spin_one_matrices[3]), wf,axes=(1,0))*self.Ec
 
 		dXdt = charging_eom.flatten()
 
@@ -169,7 +172,7 @@ class xymodel:
 
 		curie_weiss = -0.5*self.Ej*( np.roll(m,shift=[0,1,0],axis=[0,1,2]) + np.roll(m,shift=[0,-1,0],axis=[0,1,2])+np.roll(m,shift=[0,0,1],axis=[0,1,2]) + np.roll(m,shift=[0,0,-1],axis=[0,1,2]))
 
-		josephson_eom = -1.j*( np.tensordot(spin_one_matrices[1],wf,axes=[1,0]) * curie_weiss[1,...] + np.tensordot(spin_one_matrices[2] , wf,axes=[1,0])*curie_weiss[2,...] )
+		josephson_eom = -1.j*( np.tensordot(self.spin_one_matrices[1],wf,axes=[1,0]) * curie_weiss[1,...] + np.tensordot(self.spin_one_matrices[2] , wf,axes=[1,0])*curie_weiss[2,...] )
 
 		### Now we incorporate the quench
 		### This couples in the following way
@@ -201,7 +204,7 @@ class xymodel:
 			complex_curie_weiss += -0.5*self.Ej*(m[1,out_2[0],out_2[1]] + 1.j*m[2,out_2[0],out_2[1]]) 
 
 			### Now we form this in to the appropriate matrix 
-			eom_matrix = np.real(complex_curie_weiss)*spin_one_matrices[1] + np.imag(complex_curie_weiss)*spin_one_matrices[2]
+			eom_matrix = np.real(complex_curie_weiss)*self.spin_one_matrices[1] + np.imag(complex_curie_weiss)*self.spin_one_matrices[2]
 
 			vorticity_eom[:,x,y] += -1j*np.tensordot(eom_matrix, wf[:,x,y],axes=[1,0])
 			josephson_eom[:,x,y] *= 0.
@@ -231,6 +234,8 @@ class xymodel:
 		self.wf_vs_t = sol.y.reshape((3,self.Lx,self.Ly,len(sol.t)))
 
 
+### This class will operate on instances of xy model and coordinate computation of the echo spectra 
+#class xyecho:
 
 
 
