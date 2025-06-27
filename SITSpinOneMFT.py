@@ -63,6 +63,7 @@ class xymodel:
 
 		return out  
 
+
 	### Constructor
 	def __init__(self,Lx,Ly,Ej,Ec):
 		"""Constructor for instance of an xy model with given size and parameters"""
@@ -233,9 +234,46 @@ class xymodel:
 		### Now we reshape the output and save to the class instance  
 		self.wf_vs_t = sol.y.reshape((3,self.Lx,self.Ly,len(sol.t)))
 
+### This class will operate on instances of xy model and coordinate computation of a single echo spectrum 
+class xyecho:
 
-### This class will operate on instances of xy model and coordinate computation of the echo spectra 
-#class xyecho:
+	def __init__(self,model,echo_times,flux,sample_times):
+		self.model = model ### This is an instance of the xy model class 
+		### We assume the ground state has already been obtained 
+
+		### We will consider a generic echo sequence with echo_times = [0,t1,t2,t3,...] and consider the magnetic flux fixed in magnitude but flip sign each echo
+		self.echo_times = echo_times 
+		self.flux = flux
+
+		self.sample_times = sample_times
+		self.ntimes = len(self.sample_times)
+
+		self.wf_shape = self.model.gs_wf.shape
+
+		self.wf = np.zeros_like((*self.wf_shape,self.ntimes))  
+
+	### Now we create the proper quench functions for the different echo sequences 
+	def quench_function(self,t):
+		bools = t>self.echo_times
+
+		if (bools==False).all() or (bools == True).all():
+			return 0. ### We are outside the echo sequence
+
+		else:
+			return self.flux*(-1)**int(np.sum(bools)+1)
+
+	### Now we set the dynamics of the model with the given quench function and compute the echo
+	def calc_echo(self):
+		self.model.quench_function = self.quench_function ### This might be a problem if it modifies the quench function in place for an instance which is used by many different echos and might be better to use inheritance
+		self.model.solve_eom_quench(self.sample_times,wf0=self.model.gs_wf)  ### Dynamics. We start from the ground state and sample at the sample times 
+		self.wf = self.model.wf_vs_t ### Save the wavefunction dynamics
+
+
+
+
+
+
+
 
 
 
