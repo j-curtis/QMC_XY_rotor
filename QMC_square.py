@@ -26,24 +26,15 @@ class QMC:
 		self.EC = EC 
 		self.T = T 
 
-		### We round up lattice size to nearest even numbers 
-		### In order to implement the proper MCMC sampling we make sure the lattice is bipartite and even size so we can split evenly
-		self.L = L if L%2 ==0 else L+1  
-		self.M = M if M%2 ==0 else M+1
-
-		### We precompute masks for use in the checkerboard update 
-		x_grid, y_grid, z_grid = np.indices((self.L, self.L, self.M))
-		parity = (x_grid + y_grid + z_grid) % 2
-
-		self.even_mask = parity == 0
-		self.odd_mask = parity == 1
+		self.L = L  
+		self.M = max(M,1)
 
 		### Now we produce the relevant array shape 
 		self.shape = (self.L,self.L,self.M)
 
 		### And the relevant time-steps 
 		self.beta = 1./self.T
-		self.dt = self.beta/M
+		self.dt = self.beta/self.M
 
 
 		### Relevant coupling constants for the 3d model are 
@@ -93,16 +84,7 @@ class QMC:
 		delta_theta = np.pi
 		new_theta = (self.thetas[x,y,t] - delta_theta + 2.*delta_theta*self.rng.random() )%(2.*np.pi)
 		
-		#old_energy = -self.Kx*( np.cos(self.thetas[x,y,t] - self.thetas[x-1,y,t]) + np.cos(self.thetas[x,y,t] - self.thetas[(x+1)%self.L,y,t]) )
-		#old_energy += -self.Ky*( np.cos(self.thetas[x,y,t] - self.thetas[x,y-1,t]) + np.cos(self.thetas[x,y,t] - self.thetas[x,(y+1)%self.L,t]) )
-		#old_energy += -self.Kt*( np.cos(self.thetas[x,y,t] - self.thetas[x,y,t-1]) + np.cos(self.thetas[x,y,t] - self.thetas[x,y,(t+1)%self.M]) )
-		
-		#new_energy = -self.Kx*( np.cos(new_theta - self.thetas[x-1,y,t]) + np.cos(new_theta - self.thetas[(x+1)%self.L,y,t]) )
-		#new_energy += -self.Ky*( np.cos(new_theta - self.thetas[x,y-1,t]) + np.cos(new_theta - self.thetas[x,(y+1)%self.L,t]) )
-		#new_energy += -self.Kt*( np.cos(new_theta - self.thetas[x,y,t-1]) + np.cos(new_theta - self.thetas[x,y,(t+1)%self.M]) )
-
-		#delta_E = new_energy - old_energy
-		delta_E = self.local_energy(new_theta,site) - self.local_energy(self.thetas[x,y,t],site)
+		delta_E = self.local_action(new_theta,site) - self.local_action(self.thetas[x,y,t],site)
 
 		p = self.rng.random()
 
@@ -126,7 +108,7 @@ class QMC:
 	### Local energy function is useful for calling in MC step updates 
 	### theta_val is the value of the angle at size x,y,t
 	### it is not assumed to be the value stored in the configuraiton so that this can be used to also evaluate proposed energy
-	def local_energy(self,theta_val,site):
+	def local_action(self,theta_val,site):
 		x,y,t = site[:]
 		xterms = -self.Kx*( np.cos(theta_val - self.thetas[x-1,y,t]) + np.cos(theta_val - self.thetas[(x+1)%self.L,y,t]) )
 		yterms = -self.Ky*( np.cos(theta_val - self.thetas[x,y-1,t]) + np.cos(theta_val - self.thetas[x,(y+1)%self.L,t]) )
