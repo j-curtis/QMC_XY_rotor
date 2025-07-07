@@ -73,7 +73,7 @@ def evolve_quench(Ec,Ej,echo_times,flux,sample_times):
 	e_gs, psi_gs = find_GS(Ec,Ej)
 
 	### Next we evolve under the equations of motion 
-	sol = intg.solve_ivp(eom_quench,(sample_times[0],sample_times[-1]),psi_gs,t_eval=sample_times)
+	sol = intg.solve_ivp(eom_quench,(sample_times[0],sample_times[-1]),psi_gs,t_eval=sample_times,max_step = 0.05)
 	return sol.y
 
 

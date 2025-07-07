@@ -278,29 +278,26 @@ class QMC:
 
 			### Update the counter 
 			counter += 1
-	
-	###########################
-	### ANALYSIS OF SAMPLES ###
-	###########################
-
 
 
 def main():
+
+	dataDir = "../data/07072025_2/"
 	t0 = time.time()
 
 	EJ = 1.
-	EC = 0.1
+	EC = 0.05
 	nTs = 10
-	Ts = np.linspace(0.05,2.5,nTs)
-	L = 10
-	M = 10
+	Ts = np.linspace(0.2,2.,nTs)
+	L = 20
+	M = 1
 
 	nburn = 10000
-	nsample = 50
-	nstep = 10
+	nsample = 100
+	nstep = 500
 
-	energies = np.zeros(nTs)
-	OPs = np.zeros(nTs)
+	actions = np.zeros((nTs,nsample))
+	OPs = np.zeros((nTs,nsample))
 
 	for i in range(nTs):
 		sim = QMC(EJ,EC,Ts[i],L,M)
@@ -309,24 +306,20 @@ def main():
 		sim.burn()
 		sim.sample()
 
-		energies[i] = np.mean(sim.energy_samples)
-		OPs[i] =  np.mean(np.abs(sim.OP_samples) )
-
-	plt.plot(Ts,energies)
-	plt.show()
-	plt.plot(Ts,OPs)
-	plt.show()
-	quit()
-
-	plt.plot(sim.energy_samples)
-	plt.show()
-	plt.plot(np.abs(sim.OP_samples))
-	plt.show()
-	plt.imshow(sim.vort_samples[:,:,0,-1])
-	plt.colorbar()
-	plt.show()
+		actions[i,:] = sim.action_samples
+		OPs[i,:] = np.abs(sim.OP_samples)
 
 
+	np.save(dataDir+"actions.npy",actions)
+	np.save(dataDir+"OPs.npy",OPs)
+	np.save(dataDir+"Ts.npy",Ts)
+	print("EJ: ",EJ)
+	print("EC: ",EJ)
+	print("L: ",L)
+	print("M: ",M)
+	print("nburn: ",nburn)
+	print("nsample: ",nsample)
+	print("nstep: ",nstep)
 
 	t1 = time.time()
 	print("total time: ",t1-t0,"s")
